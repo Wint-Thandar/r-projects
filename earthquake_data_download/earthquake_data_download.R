@@ -1,22 +1,22 @@
-library(tidyr)
-library(dplyr)
-library(readr)
-library(stringr)
-library(lubridate)
 library(httr)
+library(lubridate)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(stringr)
 
 
 ###############################################################################
 # 1. DOWNLOAD DIRECTORY CHECK/CREATE & SET
 ###############################################################################
 
-# Time the running of the whole script. Start time.
+# Set start time to time the running of the whole script. proc_time data type.
 start_time <- proc.time()
 
 # Set working directory. 
 setwd(getSrcDirectory(function(){})[1])
 
-# Set file path. 
+# Set file path. char data type.
 file_path <- "./EQData"
 
 # Check if the folder exists, if not, create one.
@@ -36,12 +36,11 @@ ValidateDates <- function(startDate, endDate) {
   # Validation 2: Check if the End Date is earlier than the Start Date.
   # 
   # Args: 
-  #    startDate: Start Date parameter of the query. 
-  #    endDate: End Date parameter of the query. Both dates must be date data 
-  #             type.
+  #    startDate (Date): Start Date parameter of the query. 
+  #    endDate (Date): End Date parameter of the query. 
   #
   # Returns: 
-  #    No returns. 
+  #    No return value. 
 
   # Check if the given arguments are not valid dates.
   if (!is.Date(startDate) | !is.Date(endDate)) {
@@ -59,9 +58,8 @@ CheckRecordsCount <- function(startDate, endDate) {
   # Queries the record count to be downloaded for the given date arguments. 
   # 
   # Args: 
-  #    startDate: Start Date parameter of the query. 
-  #    endDate: End Date parameter of the query. Both dates must be date data 
-  #             type.
+  #    startDate (Date): Start Date parameter of the query. 
+  #    endDate (Date): End Date parameter of the query. 
   #
   # Returns: 
   #    The total number of records. Integer data type. 
@@ -74,7 +72,7 @@ CheckRecordsCount <- function(startDate, endDate) {
       paste0(
         "https://earthquake.usgs.gov/fdsnws/event/1/count?starttime=",
         startDate,
-        "&endtime=",
+        "00:00:00&endtime=",
         endDate,
         "23:59:59",
         "&minmagnitude=1"
@@ -85,18 +83,41 @@ CheckRecordsCount <- function(startDate, endDate) {
 }
 
 
-Download <- function(startDate, endDate, fileName) {
+SetFileName <- function(fileDate, fileExtension) {
+  # Sets a file name to be saved as for the file to download. 
+  # 
+  # Args: 
+  #    fileDate (Date): File Date to get month and year. 
+  #    fileExtension (character): File extension to be saved as. 
+  #
+  # Returns: 
+  #    A file name to be saved as. character data type. 
+  
+  file_name <-
+    paste0(
+      file_path,
+      "/earthquake_data_",
+      year(fileDate),
+      "_",
+      month(fileDate, label = TRUE),
+      fileExtension
+    )
+  
+  return(file_name)
+}
+
+
+DownloadFile <- function(startDate, endDate, fileName) {
   # Downloads the query results as a csv file using the query URL. 
   # 
   # Args: 
-  #    startDate: Start Date parameter of the query. 
-  #    endDate: End Date parameter of the query. Both dates must be date data 
-  #             type.
-  #    fileName: File name to be saved as, including path and extension (.csv).
-  #              Must be string data type.
+  #    startDate (Date): Start Date parameter of the query. 
+  #    endDate (Date): End Date parameter of the query. 
+  #    fileName (character): File name to be saved as, including path and 
+  #              extension.
   #
   # Returns: 
-  #    The total number of records. Integer data type. 
+  #    No return value. 
   
   # Validate date arguments.
   ValidateDates(startDate, endDate)
@@ -105,7 +126,7 @@ Download <- function(startDate, endDate, fileName) {
     paste0(
       "https://earthquake.usgs.gov/fdsnws/event/1/query?format=csv&starttime=",
       startDate,
-      "&endtime=",
+      "00:00:00&endtime=",
       endDate,
       "23:59:59",
       "&minmagnitude=1"
@@ -114,16 +135,16 @@ Download <- function(startDate, endDate, fileName) {
 }
 
 
-DownloadFiles <- function(startDate, endDate) {
+DownloadAll <- function(startDate, endDate, fileExtension) {
   # Prepares to download csv files per month using the given date arguments. 
   # 
   # Args: 
-  #    startDate: Start Date parameter of the query. 
-  #    endDate: End Date parameter of the query. Both dates must be date data 
-  #             type.
+  #    startDate (Date): Start Date parameter of the query. 
+  #    endDate (Date): End Date parameter of the query. 
+  #    fileExtension (character): File extension to be saved as. 
   #
   # Returns: 
-  #    A success message. String data type. 
+  #    A success message. character data type. 
   
   # Validate date parameters.
   ValidateDates(startDate, endDate)
@@ -142,8 +163,9 @@ DownloadFiles <- function(startDate, endDate) {
 
   # For the file download, the result records limit is 20,000 per download.
   # So, for easier tracking, the file is downloaded per month using iteration.
-  # If per month still exceeds 20,000 records, the first 15 days is downloaded 
-  # in one file and the remaining days in another file.
+  # If per month still exceeds 20,000 records, the records for that month are 
+  # separated into three files download. 10 days each for the first two files and the 
+  # remaining days in the last file.
   while (last_dl == FALSE) {  # iterate until the flag is set as TRUE.
     # The logic for setting curr_start_date is to check the iteration count.
     # If it's the 1st iteration, the given startDate argument is used. 
@@ -162,65 +184,43 @@ DownloadFiles <- function(startDate, endDate) {
     curr_end_date <- ceiling_date(curr_start_date, "month") %m-% days(1)
 
     if (curr_end_date >= endDate) {
-      
       curr_end_date <- endDate  # Set as the given argument.
       last_dl <- TRUE  # Set the flag as TRUE to end the iteration.
     }
 
     # Check the current record counts to be downloaded.
-    records_to_dl <-
-      CheckRecordsCount(curr_start_date, curr_end_date)
+    records_to_dl <- CheckRecordsCount(curr_start_date, curr_end_date)
 
-    # Check if the record limit is exceeded, if true, separate as two files.
+    # Check if the record limit is exceeded, if true, separate as three files.
     # If not, download the records.
     if (records_to_dl > 20000) {
-      # Set file name of the 1st file to be saved as, including path and 
-      # extension .csv. 
-      file_name <-
-        paste0(
-          file_path,
-          "/earthquake_data_",
-          year(curr_start_date),
-          "_",
-          month(curr_start_date, label = TRUE),
-          "-1.csv"
-        )
+      # Set file name of the 1st file to be saved as. 
+      file_ext <- paste0("-1", fileExtension)
+      file_name <- SetFileName(curr_start_date, file_ext)
       
-      # Download the first 15 days.
-      Download(
-        curr_start_date,
-        curr_start_date + days(14),
-        file_name
-      )
+      # Download the first 10 days.
+      DownloadFile(curr_start_date, curr_start_date + days(9), file_name)
       
-      # Set file name of the 2nd file to be saved as, including path and 
-      # extension .csv. 
-      file_name <-
-        paste0(
-          file_path,
-          "/earthquake_data_",
-          year(curr_start_date),
-          "_",
-          month(curr_start_date, label = TRUE),
-          "-2.csv"
-        )
+      # Set file name of the 2nd file to be saved as. 
+      file_ext <- paste0("-2", fileExtension)
+      file_name <- SetFileName(curr_start_date, file_ext)
       
-      # Download remaining days.
-      Download(curr_start_date + days(15), curr_end_date, file_name)
+      # Download another 10 days.
+      DownloadFile(curr_start_date + days(10), curr_start_date + days(19), file_name)
+      
+      # Set file name of the last file to be saved as. 
+      file_ext <- paste0("-3", fileExtension)
+      file_name <- SetFileName(curr_start_date, file_ext)
+      
+      # Download the remaining days.
+      DownloadFile(curr_start_date + days(20), curr_end_date, file_name)
+      
     } else {
-      # Set file name to be saved as, including path and extension .csv. 
-      file_name <-
-        paste0(
-          file_path,
-          "/earthquake_data_",
-          year(curr_start_date),
-          "_",
-          month(curr_start_date, label = TRUE),
-          ".csv"
-        )
+      # Set file name of the last file to be saved as. 
+      file_name <- SetFileName(curr_start_date, fileExtension)
       
       # Download the file for the month.
-      Download(curr_start_date, curr_end_date, file_name)
+      DownloadFile(curr_start_date, curr_end_date, file_name)
     }
     # Increment the downloaded records.
     downloaded_records <- downloaded_records + records_to_dl
@@ -270,7 +270,7 @@ RemoveDuplicates <- function(df) {
   # Removes all the duplicated rows. 
   # 
   # Args: 
-  #    df: A data frame to remove duplicates.
+  #    df (data frame): A data frame to remove duplicates.
   #
   # Returns: 
   #    A data frame of unique rows. 
@@ -291,18 +291,17 @@ RemoveDuplicates <- function(df) {
 
 
 CheckMissingDates <- function(df, startDate, endDate) {
-  # Prints all the missing dates from the data frame between the start date and
+  # Returns all the missing dates from the data frame between the start date and
   # the end date. If there is a missing date, it is most likely that the
   # downloaded files were incomplete.  
   # 
   # Args: 
-  #    df: A data frame to check the missing dates.
-  #    startDate: Start Date parameter to check the missing dates. 
-  #    endDate: End Date parameter to check the missing dates. Both dates must
-  #             be date data type.
+  #    df (data frame): A data frame to check the missing dates.
+  #    startDate (Date): Start Date parameter to check the missing dates. 
+  #    endDate (Date): End Date parameter to check the missing dates. 
   #
   # Returns: 
-  #    A message with the missing dates (if any). 
+  #    A list of missing dates. 
   
   # Convert time column as Date data type.
   df$time <- as.Date(df$time)
@@ -313,15 +312,7 @@ CheckMissingDates <- function(df, startDate, endDate) {
   # Check if there is any date from all_dates that are not in df.
   missing_dates <- all_dates[!all_dates %in% df$time]
   
-  # Set return message.
-  if (length(missing_dates) > 0) {
-    return_message <- paste0("Missing data for following dates: ",
-                             missing_dates)
-  } else {
-    return_message <- "There is no missing date."
-  }
-  
-  return(return_message)
+  return(missing_dates)
 }
 
 
@@ -330,7 +321,7 @@ SeparateLocationColumn <- function(df) {
   # The last comma is used as a separator.
   # 
   # Args: 
-  #    df: A data frame to check the missing dates.
+  #    df (data frame): A data frame to check the missing dates.
   #
   # Returns: 
   #    A data frame with separated columns. 
@@ -353,7 +344,7 @@ CleanData <- function(df) {
   # Replaces the abbreviations. 
   # 
   # Args: 
-  #    df: A data frame to clean the data.
+  #    df (data frame): A data frame to clean the data.
   #
   # Returns: 
   #    A data frame with a cleaned data. 
@@ -364,18 +355,43 @@ CleanData <- function(df) {
                            TRUE ~ Location) %>%
         str_trim(.) %>%
         str_to_title(.) %>%
-        str_replace(., "Ak", "Alaska") %>%
-        str_replace(., "Ca", "California") %>%
-        str_replace(., "Hi", "Hawaii") %>%
-        str_replace(., "Mo", "Missouri") %>%
-        str_replace(., "Mt", "Montana") %>%
-        str_replace(., "Mx", "Mexico") %>%
-        str_replace(., "Nv", "Nevada") %>%
-        str_replace(., "Wa", "Washington")
+        # A named vector is used to match multiple patterns.
+        str_replace_all(., c("\\bAk\\b" = "Alaska", 
+                             "\\bAr\\b" = "Arkansas",
+                             "\\bAz\\b" = "Arizona",
+                             "\\bCa\\b" = "California", 
+                             "\\bCo\\b" = "Colorado",
+                             "\\bHi\\b" = "Hawaii",
+                             "\\bId\\b" = "Idaho",
+                             "\\bKs\\b" = "Kansas",
+                             "\\bKy\\b" = "Kentucky",
+                             "\\bMn\\b" = "Minnesota",
+                             "\\bMo\\b" = "Missouri", 
+                             "\\bMt\\b" = "Montana", 
+                             "\\bMx\\b" = "Mexico",
+                             "\\bNc\\b" = "North Carolina", 
+                             "\\bNj\\b" = "New Jersey", 
+                             "\\bNm\\b" = "New Mexico",
+                             "\\bNy\\b" = "New York",
+                             "\\bNv\\b" = "Nevada", 
+                             "\\bOk\\b" = "Oklahoma", 
+                             "\\bOr\\b" = "Oregon",
+                             "\\bTn\\b" = "Tennessee", 
+                             "\\bTx\\b" = "Texas", 
+                             "\\bUsa\\b" = "USA",
+                             "\\bUt\\b" = "Utah",
+                             "\\bWa\\b" = "Washington",
+                             "\\bWy\\b" = "Wyoming"))
     ) %>%
     drop_na(latitude) %>% # Drop records with latitude as NA
     drop_na(longitude) %>% # Drop records with longitude as NA
     drop_na(Location) # Drop records with Location as NA
+  
+  # Drop unnecessary columns
+  df_cleaned <- select(df_cleaned, -c(nst, gap, dmin, rms, net, updated, 
+                                      horizontalError, depthError, magError, 
+                                      magNst, status, locationSource, magSource, 
+                                      'Location Detail'))
   
   # Get all locations with abbreviations. 
   # df_abbr <- df_cleaned$Location[nchar(as.character(df_cleaned$Location)) < 4]
@@ -395,10 +411,10 @@ CreateCSV <- function(df) {
   # Creates a csv file with the merged and cleaned data.
   # 
   # Args: 
-  #    df: A data frame of cleaned data.
+  #    df (data frame): A data frame of cleaned data.
   #
   # Returns: 
-  #    Success message. 
+  #    A file created message. 
   
   write.csv(df, file = "./earthquakes-data.csv")
   return("File created with name earthquakes-data.csv")
@@ -412,45 +428,29 @@ CreateCSV <- function(df) {
 # Set start date and end date of the search query. Use yyyy-mm-dd date format.
 start_date <- as_date("2013-01-01")
 end_date <- Sys.Date()
+file_extension <- ".csv"
 
-# Use system.time function to record the time taken to run each function.
-# system.time(total_record <- {
-#   CheckRecordsCount(start_date, end_date)
-# })
-# system.time(download_message <- {
-#   DownloadFiles(start_date, end_date)
-# })
-# system.time(df_merged <- {
-#   MergeFiles()
-# })
-# system.time(df_unique <- {
-#   RemoveDuplicates(df_merged) 
-# })
-# system.time(missing_dates <- {
-#   CheckMissingDates(df_unique, start_date, end_date) 
-# })
-# system.time(df_separated <- {
-#   SeparateLocationColumn(df_unique)
-# })
-# system.time(df_cleaned <- {
-#   CleanData(df_separated)
-# })
-# system.time(create_message <- { 
-#   CreateCSV(df_cleaned)
-# })
 
 # Run the functions without recording time for each one.
 total_record <- CheckRecordsCount(start_date, end_date)
-download_message <- DownloadFiles(start_date, end_date)
+download_message <- DownloadAll(start_date, end_date, file_extension)
 df_merged <- MergeFiles()
 df_unique <- RemoveDuplicates(df_merged)
-message <- CheckMissingDates(df_merged, start_date, end_date)
+missing_dates <- CheckMissingDates(df_merged, start_date, end_date)
 df_separated <- SeparateLocationColumn(df_unique)
 df_cleaned <- CleanData(df_separated)
 create_message <- CreateCSV(df_cleaned)
 
+# Print results to console.
 print(download_message)
 print(create_message)
+
+if (length(missing_dates) > 0) {
+  print("Following are the missing dates: ") 
+  print(missing_dates)
+} else {
+  print("There is no missing date.")
+}
 
 # Time the running of the whole script. End time.
 print(proc.time() - start_time)
