@@ -416,8 +416,9 @@ CreateCSV <- function(df) {
   # Returns: 
   #    A file created message. 
   
-  write.csv(df, file = "./earthquakes-data.csv")
-  return("File created with name earthquakes-data.csv")
+  write.csv(df, file = "./earthquakes-data.csv", row.names=FALSE)
+  return(paste0("File created with name earthquakes-data.csv and contains ", 
+                nrow(df), " rows and ", ncol(df), " columns."))
 }
 
 
